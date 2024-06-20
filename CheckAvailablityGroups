@@ -1,0 +1,16 @@
+Select ag.group_id,
+	ag.name,
+	al.dns_name,
+	ar.availability_mode,
+	ar.availability_mode_desc,
+	ar.create_date,
+	ar.endpoint_url,
+	ar.failover_mode,
+	ar.failover_mode_desc,
+	ar.session_timeout,
+	ar.replica_server_name,
+	ar.primary_role_allow_connections_desc,
+	ar.secondary_role_allow_connections_desc
+FROM sys.availability_groups as ag
+JOIN sys.availability_group_listeners as al ON ag.group_id = al.group_id
+JOIN sys.availability_replicas as ar ON al.group_id = ar.group_id

@@ -12,5 +12,5 @@ Select ag.group_id,
 	ar.primary_role_allow_connections_desc,
 	ar.secondary_role_allow_connections_desc
 FROM sys.availability_groups as ag
-JOIN sys.availability_group_listeners as al ON ag.group_id = al.group_id
-JOIN sys.availability_replicas as ar ON al.group_id = ar.group_id
+JOIN sys.availability_replicas as ar ON ag.group_id = ar.group_id
+JOIN sys.availability_group_listeners as al ON ar.group_id = al.group_id;

@@ -197,7 +197,7 @@ Second SQL Server VM built and patched, but **not active**. Activated only durin
 
 ---
 
-### **Option Smmary**
+##🔁 APPENDIX: **Option Smmary**
 ---
 
 ## ✅ **Option 1: Single SQL Server (No HA)**
@@ -232,4 +232,107 @@ Second SQL Server VM built and patched, but **not active**. Activated only durin
 
 ---
 
+Great question. Here's a step-by-step breakdown of how an **RDM** is presented from **Dell EMC PowerMax 2000** to **ESXi** and then to a **VM**. This process involves both storage configuration (on the PowerMax) and virtualization configuration (on VMware vSphere).
+
+---
+
+## 🔁 APPENDIX: End-to-End RDM Presentation Flow: PowerMax 2000 ➝ ESXi ➝ VM for WSFC Scenario
+
+---
+
+### **1. PowerMax 2000 (Storage Array) – Provisioning the LUN**
+
+On the **PowerMax 2000**:
+
+* **Create a LUN** (or Volume) in Unisphere or via Solutions Enabler/REST API.
+* Mask the LUN to the **ESXi hosts** using a **Storage Group** and **Masking View**:
+
+  * Add the LUN to a **Storage Group**.
+  * Ensure the correct **Initiator Group** (host WWNs from the ESXi HBAs) is included.
+  * Associate the Storage Group and Initiator Group via a **Masking View**.
+* Confirm that LUN is **visible to the ESXi hosts** through FC or iSCSI.
+
+> 📝 At this point, each ESXi host can "see" the raw LUN via its storage fabric.
+
+---
+
+### **2. ESXi – Detecting and Making the LUN Available**
+
+On **vSphere/ESXi**:
+
+* Rescan storage adapters in **vSphere Client** or via CLI:
+
+  ```bash
+  esxcli storage core adapter rescan --all
+  ```
+* The LUN should appear under:
+  **Storage > Devices** with an identifier like `naa.600009700001xxxxx` or `vml.02...`.
+
+> 🚨 Important: You **do not create a datastore** on this LUN — it's meant to be used raw.
+
+---
+
+### **3. vSphere – Assigning LUN to a VM as an RDM**
+
+Now, to present the LUN as an **RDM disk** to a **VM**:
+
+1. **Edit VM settings** → Add **New Hard Disk** → Select **Raw Device Mapping**.
+2. Choose the correct **device (LUN)** from the list of available SAN devices.
+3. Select:
+
+   * **Compatibility Mode**: *Physical* or *Virtual*
+   * **Location**: Where the small RDM pointer file (a .vmdk stub) will be stored (typically in the VM's datastore folder).
+4. Choose the **SCSI controller** and **Bus Sharing mode** if needed:
+
+   * For shared-disk clustering, use the **same SCSI bus number** across VMs and enable **Physical SCSI Bus Sharing**.
+5. Save and power on the VM.
+
+> ✅ Now the guest OS sees the PowerMax LUN as a **native SCSI disk**.
+
+---
+
+### **4. Inside the VM – Using the RDM**
+
+In the **guest OS**:
+
+* The disk appears as a **native SCSI device**, not virtualized.
+* You can format, partition, or use it for clustering (e.g., Failover Cluster, Oracle ASM, etc.).
+* Applications that require **raw block-level access** (like SAN-based backups or database clusters) can now directly interact with the storage.
+
+---
+
+## 🔍 Diagram Summary
+
+```plaintext
+[PowerMax 2000 LUN]
+       │
+       ▼
+[Storage Group + Masking View]
+       │
+       ▼
+[FC/iSCSI Network]
+       │
+       ▼
+[ESXi Host HBA]
+       │
+       ▼
+[vSphere sees LUN as raw device]
+       │
+       ▼
+[Assign to VM as RDM disk (Physical Mode)]
+       │
+       ▼
+[Guest OS sees it as a SCSI disk]
+```
+
+---
+
+## ✅ Key Benefits of This Setup
+
+* Low-latency, block-level access
+* Required for MSCS/WSFC or Oracle RAC
+* Enables SAN-based backup or replication
+* Bypasses VMware file system (VMFS) overhead
+
+---
 

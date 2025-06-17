@@ -197,10 +197,39 @@ Second SQL Server VM built and patched, but **not active**. Activated only durin
 
 ---
 
-Would you like this in:
+### **Option Smmary**
+---
 
-* 📄 Word or PDF format for sharing?
-* 📊 PowerPoint summary for stakeholder presentation?
-* 📝 Markdown or Confluence format?
+## ✅ **Option 1: Single SQL Server (No HA)**
 
-Let me know and I’ll generate it!
+| **Configuration Description**                                                                                                                                                                                                       | **Failover / Recovery Process**                           | **RTO**      | **Data Redundancy** | **Pros**                                    | **Cons**                                                                                                 |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ------------ | ------------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| - One SQL VM running all BizTalk databases<br>- No failover, cluster, or standby<br>- OS crash = full VM rebuild, SQL install, Rubrik restore, DB consistency check<br>- VMware HA covers host failure only (VM restarts elsewhere) | Rebuild VM → Install SQL → Restore from Rubrik → Run DBCC | 🔴 4–8 hours | ❌ None              | - Simplest setup<br>- Lowest licensing cost | - Single point of failure<br>- Manual rebuild & validation<br>- Unacceptable for production in most orgs |
+
+---
+
+## 🟠 **Option 2: Single SQL Server + Cold Standby**
+
+| **Configuration Description**                                                                                                                                                                           | **Failover / Recovery Process**                                              | **RTO**      | **Data Redundancy**     | **Pros**                                                                                                     | **Cons**                                                                                                     |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | ------------ | ----------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| - Second SQL Server VM built and patched, but not active<br>- Activated only during disaster<br>- Failure = promote standby, restore from Rubrik, run DBCC<br>- Faster than Option 1, but not automatic | Power on standby → Restore databases → Run DBCC → Update BizTalk connections | 🟠 2–4 hours | ❌ None (until restored) | - Minimal infra cost beyond Option 1<br>- Quicker than full rebuild<br>- No shared disk or clustering needed | - No automatic failover<br>- Manual restore & consistency checks<br>- Data loss risk from last backup window |
+
+---
+
+## 🟡 **Option 3: Basic Availability Groups (SQL Standard Edition)**
+
+| **Configuration Description**                                                                                                                                                                                                           | **Failover / Recovery Process**                            | **RTO**          | **Data Redundancy**        | **Pros**                                                                                  | **Cons**                                                                                                                                          |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- | ---------------- | -------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| - Two SQL Server VMs with Basic Always On AG<br>- Each database in its own AG (SQL Std supports only 1 DB per AG)<br>- Uses BizTalk DNS alias (CNAME) pointing to active SQL instance<br>- Requires manual DNS alias update on failover | Manual AG failover → Update CNAME/DNS → BizTalk reconnects | 🟢 15–30 minutes | ✅ Two full database copies | - Real-time synchronization<br>- Built-in data redundancy<br>- No shared storage required | - Manual DNS repointing (no AG listener in SQL Std)<br>- One DB per AG = more complexity<br>- Must test BizTalk compatibility with CNAME failover |
+
+---
+
+## 🟢 **Option 4: WSFC with RDM Shared Disk (Current Model)**
+
+| **Configuration Description**                                                                                                                                                                                            | **Failover / Recovery Process**                            | **RTO**       | **Data Redundancy**            | **Pros**                                                                                                   | **Cons**                                                                                                                           |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- | ------------- | ------------------------------ | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| - Two-node WSFC cluster using shared storage (RDM via VMware)<br>- Witness is a file share (not quorum disk)<br>- Only one node is active at a time<br>- BizTalk connects via SQL instance name; failover is transparent | Automatic WSFC failover → BizTalk reconnects transparently | 🟢 <2 minutes | ❌ No second copy (shared disk) | - Proven BizTalk HA model<br>- Seamless automatic failover<br>- No application logic or DNS changes needed | - Only one copy of data (shared RDM = SPOF)<br>- VMware + storage management overhead<br>- Not flexible for cloud or hybrid setups |
+
+---
+
+

@@ -43,12 +43,12 @@ We assess alternatives to the existing **WSFC-based setup** using technical, ope
 
 The following SQL Server HA/DR design options are being considered for the target BizTalk 2020 environment:
 
-| Option       | Description                                                                                                                   |
+| Options      | Description                                                                                                                   |
 | ------------ | ----------------------------------------------------------------------------------------------------------------------------- |
-| **Option 1** | **Single SQL Server** — One SQL VM only, no HA or DR configuration                                                            |
-| **Option 2** | **Single SQL Server + Cold Standby** — Standby VM prebuilt but inactive, used for manual recovery                             |
-| **Option 3** | **Basic Availability Groups (SQL Standard Edition)** — Two SQL VMs with per-database AGs and DNS-based failover               |
-| **Option 4** | **Windows Server Failover Cluster (WSFC)** — Two-node cluster using shared RDM storage and file share witness **(current model)** |
+| **1** | **Single SQL Server** — One SQL VM only, no HA or DR configuration                                                            |
+| **2** | **Single SQL Server + Cold Standby** — Standby VM prebuilt but inactive, used for manual recovery                             |
+| **3** | **Basic Availability Groups (SQL Standard Edition)** — Two SQL VMs with per-database AGs and DNS-based failover               |
+| **4** | **Windows Server Failover Cluster (WSFC)** — Two-node cluster using shared RDM storage and file share witness **(current model)** |
 
 
 ### ✅ **Option 1: Single SQL Server (No HA)**

@@ -4,7 +4,7 @@
 
 In a SQL Server integration environment spanning three servers (ServerA → ServerB → ServerC), Kerberos authentication fails in a double-hop scenario when using SSIS and linked servers due to limitations in constrained delegation and Windows Credential Guard.
 
-#### 🔑 Key Points:
+#### Key Points:
 
 * **Multihop Scenario:**
   SSIS packages run on **ServerA**, connect to **ServerB**, which then connects via a linked server to **ServerC**. This is a classic **double-hop (multi-hop)** Kerberos authentication case.

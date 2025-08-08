@@ -39,10 +39,7 @@ Even with constrained delegation configured on `SQLB_SVC`, ServerB cannot forwar
 ---
 ---
 
-**Title:** Challenges with Kerberos Constrained Delegation, Credential Guard, and SSIS in Multi-Hop SQL Server Scenarios
-
-**Author:** \[Your Name]
-**Date:** \[Insert Date]
+**Title:** **Challenges with Kerberos Constrained Delegation, Credential Guard, and SSIS in Multi-Hop SQL Server Scenarios**
 
 ---
 

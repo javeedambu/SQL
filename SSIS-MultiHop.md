@@ -1,3 +1,44 @@
+---
+
+### **Executive Summary: Kerberos Delegation Challenges with SSIS and Linked Servers**
+
+In a SQL Server integration environment spanning three servers (ServerA → ServerB → ServerC), Kerberos authentication fails in a double-hop scenario when using SSIS and linked servers due to limitations in constrained delegation and Windows Credential Guard.
+
+#### 🔑 Key Points:
+
+* **Multihop Scenario:**
+  SSIS packages run on **ServerA**, connect to **ServerB**, which then connects via a linked server to **ServerC**. This is a classic **double-hop (multi-hop)** Kerberos authentication case.
+
+* **Credential Guard Implications:**
+  Credential Guard, enabled by default on newer Windows Server versions, blocks the use of **unconstrained delegation**, requiring **constrained delegation** to perform multi-hop authentication securely.
+
+* **SSIS Limitation:**
+  SSIS does **not support constrained delegation properly** because it does **not propagate Kerberos tokens** across hops, even if service accounts are configured correctly. Therefore, Kerberos authentication fails at the **linked server hop** from ServerB to ServerC.
+
+* **Current Setup:**
+
+  * All SQL Engines run under individual service accounts: `SQLA_SVC`, `SQLB_SVC`, `SQLC_SVC`
+  * SSIS packages use `SSIS_SVC` for authentication
+
+#### ⚠️ Problem:
+
+Even with constrained delegation configured on `SQLB_SVC`, ServerB cannot forward credentials from `SSIS_SVC` to ServerC over the linked server. This is a known Microsoft limitation in SSIS architecture when Credential Guard is present.
+
+---
+
+### ✅ Recommended Options:
+
+1. **Use SQL Authentication** in the linked server to avoid Kerberos delegation altogether.
+2. **Redesign SSIS Package** to connect directly from **ServerA to ServerC**, avoiding the second hop.
+3. **Disable Credential Guard** on **ServerA and ServerB** (with security caveats), allowing **unconstrained delegation**.
+4. **Rehost on Project Deployment Model (SSISDB)** where the job runs **locally via SQL Agent**, which may support Kerberos under constrained delegation *if no linked server is used*.
+
+---
+
+
+---
+---
+
 **Title:** Challenges with Kerberos Constrained Delegation, Credential Guard, and SSIS in Multi-Hop SQL Server Scenarios
 
 **Author:** \[Your Name]
@@ -140,3 +181,202 @@ Organizations must choose between workarounds like **SQL authentication**, **dir
 4. Kerberos Authentication Flow - [Microsoft Docs](https://learn.microsoft.com/en-us/windows-server/security/kerberos/kerberos-authentication-overview)
 
 ---
+---
+
+---
+Detailed instructions — both **PowerShell** and **GUI** — for configuring **Service Principal Names (SPNs)** and **Constrained Delegation** for your multi-hop SSIS + SQL Server scenario.
+
+---
+
+## 🔧 PART 1: Registering SPNs
+
+SPNs are essential for Kerberos authentication. Each SQL Server service running under a domain account must have an SPN registered for:
+
+```
+MSSQLSvc/<FQDN>:<port>
+MSSQLSvc/<hostname>:<port>
+```
+
+---
+
+### ✅ PowerShell Instructions: Add SPNs
+
+Use this to register SPNs for each SQL Server service account:
+
+```powershell
+# Example: SQL Server on ServerA running under DOMAIN\SQLA_SVC
+setspn -S MSSQLSvc/ServerA.domain.com:1433 DOMAIN\SQLA_SVC
+setspn -S MSSQLSvc/ServerA:1433 DOMAIN\SQLA_SVC
+
+# SQL Server on ServerB
+setspn -S MSSQLSvc/ServerB.domain.com:1433 DOMAIN\SQLB_SVC
+setspn -S MSSQLSvc/ServerB:1433 DOMAIN\SQLB_SVC
+
+# SQL Server on ServerC
+setspn -S MSSQLSvc/ServerC.domain.com:1433 DOMAIN\SQLC_SVC
+setspn -S MSSQLSvc/ServerC:1433 DOMAIN\SQLC_SVC
+```
+
+To verify:
+
+```powershell
+# View SPNs for SQLB_SVC
+setspn -L DOMAIN\SQLB_SVC
+```
+
+---
+
+### 🖥️ GUI Instructions: Add SPNs (via ADSI Edit)
+
+1. Open **ADSI Edit** → Connect to **Default Naming Context**.
+2. Navigate to the **service account object** (e.g., `DOMAIN\SQLB_SVC`).
+3. Right-click → **Properties**.
+4. Find the attribute `servicePrincipalName` → Edit.
+5. Add:
+
+   ```
+   MSSQLSvc/ServerB.domain.com:1433
+   MSSQLSvc/ServerB:1433
+   ```
+
+Repeat for other service accounts.
+
+---
+
+## 🔐 PART 2: Configure Constrained Delegation
+
+Configure **constrained delegation** so the SSIS service account (`SSIS_SVC`) can delegate credentials to the SQL Server service on ServerC.
+
+---
+
+### ✅ PowerShell Instructions: Configure Delegation
+
+Use this command to allow constrained delegation:
+
+```powershell
+# Allow SSIS_SVC to delegate to SQLC_SVC's MSSQL service
+Set-ADUser -Identity SSIS_SVC -PrincipalsAllowedToDelegateToAccount (Get-ADComputer -Identity ServerC)
+
+# Or allow SQLB_SVC to delegate on behalf of SSIS_SVC (if using proxy on ServerB)
+Set-ADUser -Identity SQLB_SVC -Add @{msDS-AllowedToDelegateTo=@("MSSQLSvc/ServerC.domain.com:1433", "MSSQLSvc/ServerC:1433")}
+```
+
+> 🛑 `Set-ADUser` requires the **ActiveDirectory** module.
+
+---
+
+### 🖥️ GUI Instructions: Constrained Delegation
+
+1. Open **Active Directory Users and Computers (ADUC)**.
+2. Find the **account performing delegation** (e.g., `SSIS_SVC` or `SQLB_SVC`).
+3. Right-click → **Properties** → **Delegation** tab.
+4. Select:
+
+   * ✅ "Trust this user for delegation to specified services only"
+   * ✅ "Use Kerberos only"
+5. Click **Add...**
+6. Select **User or Computer** → Enter `ServerC` → OK
+7. Choose the **MSSQLSvc** service (you must have SPNs already registered!)
+
+---
+
+## 📌 Notes
+
+* Ensure **SPNs are not duplicated** across accounts.
+* For **SSIS execution**, use SQL Agent with proxy if needed.
+* To make Kerberos authentication easier to debug, enable auditing:
+
+  ```powershell
+  auditpol /set /subcategory:"Kerberos Authentication Service" /success:enable /failure:enable
+  ```
+
+  Then review the event logs on each server.
+
+---
+---
+
+---
+**Deployment Checklist** for enabling **Kerberos Constrained Delegation** with **SSIS + Linked Server** in your **ServerA → ServerB → ServerC** scenario.
+---
+
+## ✅ **Kerberos Constrained Delegation Deployment Checklist**
+
+### 🔹 **A. Prerequisites**
+
+* [ ] All servers (ServerA, ServerB, ServerC) are joined to the same Active Directory domain.
+* [ ] All SQL Server services run under domain service accounts:
+
+  * ServerA → `DOMAIN\SQLA_SVC`
+  * ServerB → `DOMAIN\SQLB_SVC`
+  * ServerC → `DOMAIN\SQLC_SVC`
+* [ ] SSIS packages use `DOMAIN\SSIS_SVC` for authentication.
+* [ ] Port 1433 (or custom SQL ports) is known and open between the servers.
+
+---
+
+### 🔹 **B. SPN Configuration**
+
+#### 🔸 For each SQL Server service account:
+
+**Run this PowerShell as a Domain Admin:**
+
+```powershell
+# For ServerA
+setspn -S MSSQLSvc/ServerA.domain.com:1433 DOMAIN\SQLA_SVC
+setspn -S MSSQLSvc/ServerA:1433 DOMAIN\SQLA_SVC
+
+# For ServerB
+setspn -S MSSQLSvc/ServerB.domain.com:1433 DOMAIN\SQLB_SVC
+setspn -S MSSQLSvc/ServerB:1433 DOMAIN\SQLB_SVC
+
+# For ServerC
+setspn -S MSSQLSvc/ServerC.domain.com:1433 DOMAIN\SQLC_SVC
+setspn -S MSSQLSvc/ServerC:1433 DOMAIN\SQLC_SVC
+```
+
+* [ ] SPNs are **unique** (no duplication across accounts)
+* [ ] SPNs are registered on the **domain service account**, not the computer object
+
+---
+
+### 🔹 **C. Configure Constrained Delegation**
+
+#### 🔸 Delegate from `SQLB_SVC` to `SQLC_SVC` (most critical step):
+
+**Option 1 – PowerShell:**
+
+```powershell
+Set-ADUser -Identity SQLB_SVC -Add @{msDS-AllowedToDelegateTo=@("MSSQLSvc/ServerC.domain.com:1433", "MSSQLSvc/ServerC:1433")}
+```
+
+**Option 2 – GUI:**
+
+* [ ] Open **Active Directory Users and Computers (ADUC)**
+* [ ] Right-click `SQLB_SVC` → **Properties** → **Delegation** tab
+* [ ] Select: ✅ *"Trust this user for delegation to specified services only"* + ✅ *"Use Kerberos only"*
+* [ ] Click **Add...** → Select **ServerC**
+* [ ] Choose both `MSSQLSvc/ServerC.domain.com:1433` and `MSSQLSvc/ServerC:1433`
+
+---
+
+### 🔹 **D. Validate Kerberos Authentication**
+
+* [ ] Use `setspn -L DOMAIN\SQLB_SVC` to confirm SPNs
+* [ ] Run a test SSIS package from ServerA
+* [ ] From ServerB SQL Server, execute the linked server query to ServerC
+* [ ] Check Event Viewer → Security log → for Kerberos ticket logs (`Event ID 4769`)
+* [ ] Use `klist` on ServerA and ServerB to confirm Kerberos tickets
+
+---
+
+### 🔹 **E. Optional Mitigations / Alternatives**
+
+* [ ] Consider **SQL Authentication** in the linked server (to avoid delegation)
+* [ ] Redesign SSIS package to connect **directly from ServerA to ServerC**
+* [ ] Disable **Credential Guard** (with security review) on:
+
+  * ServerA and ServerB (to allow unconstrained delegation)
+* [ ] Consider using **Project Deployment Model (SSISDB)** and **SQL Agent job on ServerB** (local execution, avoids double-hop)
+
+---
+
